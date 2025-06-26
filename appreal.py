@@ -1,71 +1,81 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import datetime
+import os
 
+# ---------- CONFIGURACIÓN ----------
+USUARIOS_FILE = "usuarios.csv"
 DATA_FILE = "streamlit_crm_base.csv"
 
-# --- Lista de agentes válidos ---
-AGENTES_VALIDOS = ["Malena Pérez Abad", "Cynthia Moreira", "Alain Montans", "Carolina Balbuena", "Lilia Echarte", "Federico Sierra", "Daniel Oyola"]
+# ---------- CARGAR USUARIOS ----------
+usuarios_df = pd.read_csv(USUARIOS_FILE)
 
-# --- Login simple ---
-st.set_page_config(page_title="CRM RE/MAX Real", layout="centered")
-st.title("🧭 CRM de Actividad - RE/MAX Real")
+# ---------- LOGIN ----------
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+    st.session_state.usuario_nombre = ""
 
-agente = st.selectbox("Seleccioná tu nombre", ["Seleccionar..."] + AGENTES_VALIDOS)
-
-if agente != "Seleccionar...":
-    st.success(f"Bienvenido/a, {agente}")
-    
-    st.subheader("📋 Nueva Actividad")
-
-    with st.form("formulario_actividad"):
-        fecha_actividad = st.date_input("📅 Fecha de la actividad", date.today())
-        tipo_actividad = st.selectbox("🎯 Tipo de actividad", ["Llamada", "Mensaje", "Reunión", "Visita", "Publicación", "Otro"])
-        nombre_contacto = st.text_input("👤 Nombre del contacto")
-        descripcion = st.text_area("📝 Breve descripción de la actividad")
-
-        seguimiento = st.radio("📌 ¿Requiere seguimiento?", ["No", "Sí"])
-        if seguimiento == "Sí":
-            fecha_seguimiento = st.date_input("📆 Fecha de seguimiento", date.today())
-            motivo = st.text_input("📣 Motivo del seguimiento")
+if not st.session_state.autenticado:
+    st.title("Ingreso al CRM de Agentes")
+    usuario = st.text_input("Usuario")
+    contraseña = st.text_input("Contraseña", type="password")
+    if st.button("Ingresar"):
+        fila = usuarios_df[
+            (usuarios_df["usuario"] == usuario) &
+            (usuarios_df["contraseña"] == contraseña)
+        ]
+        if not fila.empty:
+            st.session_state.autenticado = True
+            st.session_state.usuario_nombre = fila.iloc[0]["nombre"]
+            st.success(f"Bienvenido, {st.session_state.usuario_nombre}")
         else:
-            fecha_seguimiento = ""
-            motivo = ""
+            st.error("Usuario o contraseña incorrectos.")
+    st.stop()
 
-        resultado = st.selectbox("📊 Resultado", ["Interesado", "Sin interés", "No contesta", "Agendar llamada", "Otro"])
+# ---------- FUNCIONES AUXILIARES ----------
 
-        enviado = st.form_submit_button("✅ Guardar actividad")
-
-        if enviado:
-            nuevo_registro = pd.DataFrame([{
-                "Marca de tiempo": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Agente": agente,
-                "Fecha de actividad": fecha_actividad,
-                "Tipo de actividad": tipo_actividad,
-                "Nombre del contacto": nombre_contacto,
-                "Descripción": descripcion,
-                "Requiere seguimiento": seguimiento,
-                "Fecha de seguimiento": fecha_seguimiento,
-                "Motivo del seguimiento": motivo,
-                "Resultado": resultado
-            }])
-
-            try:
-                datos_existentes = pd.read_csv(DATA_FILE)
-                df_final = pd.concat([datos_existentes, nuevo_registro], ignore_index=True)
-            except FileNotFoundError:
-                df_final = nuevo_registro
-
-            df_final.to_csv(DATA_FILE, index=False)
-            st.success("✅ Actividad registrada correctamente")
-
-    # Mostrar actividades anteriores del agente
-    st.subheader("📈 Mis actividades registradas")
-    try:
+def guardar_datos(nueva_fila):
+    if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
-        df_agente = df[df["Agente"] == agente]
-        st.dataframe(df_agente.sort_values("Marca de tiempo", ascending=False), use_container_width=True)
-    except FileNotFoundError:
-        st.info("Aún no hay actividades registradas.")
-else:
-    st.warning("👀 Seleccioná tu nombre para comenzar")
+        df = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
+    else:
+        df = pd.DataFrame([nueva_fila])
+    df.to_csv(DATA_FILE, index=False)
+
+# ---------- FORMULARIO ----------
+st.title("Registro de Actividades")
+st.markdown("Completa tu actividad para que el broker vea tu progreso.")
+
+actividad = st.selectbox("Tipo de actividad", [
+    "Llamada a lead",
+    "Mensaje por WhatsApp",
+    "Publicación en redes",
+    "Captación",
+    "Reunión presencial",
+    "Seguimiento",
+    "Otro"
+])
+
+detalle = st.text_area("Descripción breve de la actividad")
+
+requiere_seguimiento = st.radio("¿Requiere seguimiento?", ["Sí", "No"])
+
+fecha_seguimiento = None
+if requiere_seguimiento == "Sí":
+    fecha_seguimiento = st.date_input("¿Cuándo hay que hacer el seguimiento?")
+
+# ---------- BOTÓN DE ENVÍO ----------
+if st.button("Registrar actividad"):
+    if actividad and detalle:
+        nueva_fila = {
+            "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "agente": st.session_state.usuario_nombre,
+            "actividad": actividad,
+            "detalle": detalle,
+            "requiere_seguimiento": requiere_seguimiento,
+            "fecha_seguimiento": fecha_seguimiento if requiere_seguimiento == "Sí" else ""
+        }
+        guardar_datos(nueva_fila)
+        st.success("✅ Actividad registrada correctamente.")
+    else:
+        st.warning("🛑 Debes completar la actividad y descripción antes de enviar.")
