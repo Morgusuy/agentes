@@ -4,7 +4,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 from datetime import datetime
 
-# ---------- CONFIG GOOGLE SHEETS ----------
+# ---------------------- CONFIG GOOGLE SHEETS ----------------------
 SCOPE = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
@@ -12,21 +12,21 @@ SCOPE = [
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(
     dict(st.secrets["GOOGLE_SERVICE_ACCOUNT"]), scopes=SCOPE
 )
-gc = gspread.authorize(credentials)
+client = gspread.authorize(credentials)
 
-# Nombre de tu spreadsheet y hoja (cámbialo si usas otro)
-SHEET_NAME = "registro_actividades_agentes"
-worksheet = gc.open(SHEET_NAME).sheet1
+# ✅ Usamos tu ID fijo
+SHEET_ID = "1BCuVGc2FV2KfXvZpNg3JjOK7xNDfXO_vZLo9JAgNHnE"
+worksheet = client.open_by_key(SHEET_ID).sheet1
 
-# ---------- CARGAR USUARIOS ----------
-# usuarios.csv debe tener columnas: usuario,contraseña,nombre
+# ---------------------- CARGAR USUARIOS ----------------------
+# usuarios.csv con columnas: usuario,contraseña,nombre
 usuarios_df = pd.read_csv("usuarios.csv")
 auth = {
     row["usuario"]: (str(row["contraseña"]), row["nombre"])
     for _, row in usuarios_df.iterrows()
 }
 
-# ---------- LOGIN ----------
+# ---------------------- LOGIN ----------------------
 st.set_page_config(page_title="CRM Agentes", layout="centered")
 st.title("🔐 Login CRM RE/MAX Real")
 
@@ -48,7 +48,7 @@ if not st.session_state.logged:
         else:
             st.error("Alias o contraseña incorrectos.")
 
-# ---------- FORMULARIO DE ACTIVIDAD ----------
+# ---------------------- FORMULARIO DE ACTIVIDAD ----------------------
 if st.session_state.get("logged", False):
     st.header("📋 Registrar nueva actividad")
 
