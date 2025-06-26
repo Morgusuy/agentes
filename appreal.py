@@ -1,81 +1,68 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-import os
 
-# ---------- CONFIGURACIÓN ----------
-USUARIOS_FILE = "usuarios.csv"
-DATA_FILE = "streamlit_crm_base.csv"
+# ---------- CONFIGURACIÓN GOOGLE SHEETS ----------
+SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+    st.secrets["GOOGLE_SERVICE_ACCOUNT"], scopes=SCOPE
+)
 
-# ---------- CARGAR USUARIOS ----------
-usuarios_df = pd.read_csv(USUARIOS_FILE)
+gc = gspread.authorize(credentials)
+SHEET_NAME = "registro_actividades_agentes"  # ¡Tu hoja de Google!
+worksheet = gc.open(SHEET_NAME).sheet1
 
-# ---------- LOGIN ----------
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
-    st.session_state.usuario_nombre = ""
+# ---------- INTERFAZ PRINCIPAL ----------
+st.set_page_config(page_title="Registro de Actividades", layout="centered")
+st.title("📝 Registro Diario de Actividades")
 
-if not st.session_state.autenticado:
-    st.title("Ingreso al CRM de Agentes")
-    usuario = st.text_input("Usuario")
-    contraseña = st.text_input("Contraseña", type="password")
-    if st.button("Ingresar"):
-        fila = usuarios_df[
-            (usuarios_df["usuario"] == usuario) &
-            (usuarios_df["contraseña"] == contraseña)
+# ---------- LOGIN BÁSICO ----------
+st.subheader("🔐 Ingreso del agente")
+
+usuarios_df = pd.read_csv("usuarios.csv")
+usuarios = usuarios_df["usuario"].tolist()
+usuario_seleccionado = st.selectbox("Seleccioná tu nombre", usuarios)
+clave = st.text_input("Contraseña", type="password")
+
+usuario_correcto = usuarios_df[usuarios_df["usuario"] == usuario_seleccionado]
+if not usuario_correcto.empty and clave == usuario_correcto["clave"].values[0]:
+    st.success(f"Bienvenido, {usuario_seleccionado}")
+
+    # ---------- FORMULARIO DE ACTIVIDAD ----------
+    st.subheader("📌 Nueva Actividad")
+
+    tipo = st.selectbox("Tipo de actividad", [
+        "Llamada telefónica", "Reunión presencial", "Publicación en redes",
+        "Captación", "Visita a propiedad", "Seguimiento", "Otra"
+    ])
+
+    descripcion = st.text_area("Descripción breve", max_chars=200)
+    requiere_seguimiento = st.radio("¿Requiere seguimiento?", ["Sí", "No"])
+
+    fecha_seguimiento = ""
+    if requiere_seguimiento == "Sí":
+        fecha_seguimiento = st.date_input("Fecha de seguimiento")
+
+    if st.button("Registrar actividad"):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        fila = [
+            now,
+            usuario_seleccionado,
+            tipo,
+            descripcion,
+            requiere_seguimiento,
+            fecha_seguimiento if requiere_seguimiento == "Sí" else ""
         ]
-        if not fila.empty:
-            st.session_state.autenticado = True
-            st.session_state.usuario_nombre = fila.iloc[0]["nombre"]
-            st.success(f"Bienvenido, {st.session_state.usuario_nombre}")
-        else:
-            st.error("Usuario o contraseña incorrectos.")
-    st.stop()
+        worksheet.append_row(fila)
+        st.success("✅ Actividad registrada correctamente")
 
-# ---------- FUNCIONES AUXILIARES ----------
+else:
+    st.warning("Ingresá tus credenciales para continuar")
 
-def guardar_datos(nueva_fila):
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
-        df = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
-    else:
-        df = pd.DataFrame([nueva_fila])
-    df.to_csv(DATA_FILE, index=False)
-
-# ---------- FORMULARIO ----------
-st.title("Registro de Actividades")
-st.markdown("Completa tu actividad para que el broker vea tu progreso.")
-
-actividad = st.selectbox("Tipo de actividad", [
-    "Llamada a lead",
-    "Mensaje por WhatsApp",
-    "Publicación en redes",
-    "Captación",
-    "Reunión presencial",
-    "Seguimiento",
-    "Otro"
-])
-
-detalle = st.text_area("Descripción breve de la actividad")
-
-requiere_seguimiento = st.radio("¿Requiere seguimiento?", ["Sí", "No"])
-
-fecha_seguimiento = None
-if requiere_seguimiento == "Sí":
-    fecha_seguimiento = st.date_input("¿Cuándo hay que hacer el seguimiento?")
-
-# ---------- BOTÓN DE ENVÍO ----------
-if st.button("Registrar actividad"):
-    if actividad and detalle:
-        nueva_fila = {
-            "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "agente": st.session_state.usuario_nombre,
-            "actividad": actividad,
-            "detalle": detalle,
-            "requiere_seguimiento": requiere_seguimiento,
-            "fecha_seguimiento": fecha_seguimiento if requiere_seguimiento == "Sí" else ""
-        }
-        guardar_datos(nueva_fila)
-        st.success("✅ Actividad registrada correctamente.")
-    else:
-        st.warning("🛑 Debes completar la actividad y descripción antes de enviar.")
+# ---------- VISTA BROKER (opcional) ----------
+if usuario_seleccionado == "Gustavo Moreira" and clave == usuario_correcto["clave"].values[0]:
+    st.subheader("📊 Vista broker")
+    df = pd.DataFrame(worksheet.get_all_records())
+    st.dataframe(df.sort_values("fecha", ascending=False), use_container_width=True)
