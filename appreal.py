@@ -15,7 +15,7 @@ credentials = ServiceAccountCredentials.from_json_keyfile_dict(
 gc = gspread.authorize(credentials)
 
 # Nombre de tu spreadsheet y hoja (cámbialo si usas otro)
-SHEET_NAME = "crm_data"
+SHEET_NAME = "registro_actividades_agentes"
 worksheet = gc.open(SHEET_NAME).sheet1
 
 # ---------- CARGAR USUARIOS ----------
