@@ -9,7 +9,7 @@ from datetime import datetime
 # Autenticación con Google Sheets
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(
-    json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"]), scopes=SCOPE
+    st.secrets["GOOGLE_SERVICE_ACCOUNT"], scopes=SCOPE
 )
 client = gspread.authorize(credentials)
 
