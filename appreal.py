@@ -1,68 +1,79 @@
 import streamlit as st
 import pandas as pd
+import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
-# ---------- CONFIGURACIÓN GOOGLE SHEETS ----------
+# ---------------------- CONFIGURACIÓN ----------------------
+
+st.set_page_config(page_title="CRM Agentes", page_icon="📋", layout="centered")
+
+# Autenticación con Google Sheets
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(
-    st.secrets["GOOGLE_SERVICE_ACCOUNT"], scopes=SCOPE
+    json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"]), scopes=SCOPE
 )
-
 gc = gspread.authorize(credentials)
-SHEET_NAME = "registro_actividades_agentes"  # ¡Tu hoja de Google!
+SHEET_NAME = "crm_data"
 worksheet = gc.open(SHEET_NAME).sheet1
 
-# ---------- INTERFAZ PRINCIPAL ----------
-st.set_page_config(page_title="Registro de Actividades", layout="centered")
-st.title("📝 Registro Diario de Actividades")
+# ---------------------- LOGIN ----------------------
 
-# ---------- LOGIN BÁSICO ----------
-st.subheader("🔐 Ingreso del agente")
+st.title("🔐 Acceso al CRM de Agentes")
 
-usuarios_df = pd.read_csv("usuarios.csv")
-usuarios = usuarios_df["usuario"].tolist()
-usuario_seleccionado = st.selectbox("Seleccioná tu nombre", usuarios)
-clave = st.text_input("Contraseña", type="password")
+if "login_success" not in st.session_state:
+    st.session_state.login_success = False
 
-usuario_correcto = usuarios_df[usuarios_df["usuario"] == usuario_seleccionado]
-if not usuario_correcto.empty and clave == usuario_correcto["clave"].values[0]:
-    st.success(f"Bienvenido, {usuario_seleccionado}")
+if not st.session_state.login_success:
+    with st.form("login_form"):
+        usuario = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+        submitted = st.form_submit_button("Ingresar")
 
-    # ---------- FORMULARIO DE ACTIVIDAD ----------
-    st.subheader("📌 Nueva Actividad")
+        if submitted:
+            usuarios_validos = st.secrets["USUARIOS"]
+            if usuario in usuarios_validos and usuarios_validos[usuario] == password:
+                st.session_state.login_success = True
+                st.session_state.usuario = usuario
+                st.success("Ingreso correcto.")
+            else:
+                st.error("Usuario o contraseña incorrectos.")
 
-    tipo = st.selectbox("Tipo de actividad", [
-        "Llamada telefónica", "Reunión presencial", "Publicación en redes",
-        "Captación", "Visita a propiedad", "Seguimiento", "Otra"
+# ---------------------- FORMULARIO ----------------------
+
+if st.session_state.login_success:
+    st.header(f"📋 Registro de Actividad - {st.session_state.usuario}")
+
+    actividad = st.selectbox("Tipo de actividad", [
+        "Llamada", "Reunión", "WhatsApp", "Email", "Visita a propiedad", "Publicación", "Otro"
     ])
 
-    descripcion = st.text_area("Descripción breve", max_chars=200)
+    descripcion = st.text_area("Descripción de la actividad")
+
     requiere_seguimiento = st.radio("¿Requiere seguimiento?", ["Sí", "No"])
 
-    fecha_seguimiento = ""
+    fecha_seguimiento = None
     if requiere_seguimiento == "Sí":
-        fecha_seguimiento = st.date_input("Fecha de seguimiento")
+        fecha_seguimiento = st.date_input("¿Fecha de seguimiento?")
 
     if st.button("Registrar actividad"):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        fila = [
-            now,
-            usuario_seleccionado,
-            tipo,
-            descripcion,
-            requiere_seguimiento,
-            fecha_seguimiento if requiere_seguimiento == "Sí" else ""
-        ]
-        worksheet.append_row(fila)
-        st.success("✅ Actividad registrada correctamente")
+        if requiere_seguimiento == "Sí" and not fecha_seguimiento:
+            st.warning("Debes ingresar una fecha de seguimiento.")
+        else:
+            fecha_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            fila = [
+                fecha_hora,
+                st.session_state.usuario,
+                actividad,
+                descripcion,
+                requiere_seguimiento,
+                str(fecha_seguimiento) if fecha_seguimiento else ""
+            ]
+            worksheet.append_row(fila)
+            st.success("✅ Actividad registrada correctamente.")
 
-else:
-    st.warning("Ingresá tus credenciales para continuar")
-
-# ---------- VISTA BROKER (opcional) ----------
-if usuario_seleccionado == "Gustavo Moreira" and clave == usuario_correcto["clave"].values[0]:
-    st.subheader("📊 Vista broker")
-    df = pd.DataFrame(worksheet.get_all_records())
-    st.dataframe(df.sort_values("fecha", ascending=False), use_container_width=True)
+    with st.expander("📈 Ver últimas 10 actividades"):
+        df = pd.DataFrame(worksheet.get_all_records())
+        df_usuario = df[df["Agente"] == st.session_state.usuario]
+        st.dataframe(df_usuario.tail(10))
